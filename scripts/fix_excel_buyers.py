@@ -1,49 +1,25 @@
 #!/usr/bin/env python3
-"""
-Propagate parent product name ("Tên sản phẩm: ...")
-into column F (MST người mua) of child rows.
-
-Parent row:
-    Column A starts with "Tên sản phẩm:"
-
-Child row:
-    Column A contains numeric STT (1,2,3...)
-
-Usage:
-    python scripts/fix_excel_buyers.py input.xlsx
-    python scripts/fix_excel_buyers.py input.xlsx --overwrite
-"""
-
-from __future__ import annotations
 
 import argparse
 import os
 from datetime import datetime
-from typing import Optional
-
 from openpyxl import load_workbook
 
 
-# -----------------------------
-# Helpers
-# -----------------------------
-
-def is_parent_row(cell_value) -> bool:
-    """Check if row is a parent row."""
-    if cell_value is None:
+def is_parent_row(value):
+    if value is None:
         return False
-    return str(cell_value).strip().startswith("Tên sản phẩm:")
+    return str(value).strip().startswith("Tên sản phẩm:")
 
 
-def is_child_row(cell_value) -> bool:
-    """Check if row is a child row (numeric STT)."""
-    if cell_value is None:
+def is_child_row(value):
+    if value is None:
         return False
 
-    if isinstance(cell_value, (int, float)):
+    if isinstance(value, (int, float)):
         return True
 
-    s = str(cell_value).strip()
+    s = str(value).strip()
     if s.isdigit():
         return True
 
@@ -53,72 +29,57 @@ def is_child_row(cell_value) -> bool:
     return False
 
 
-def is_empty(val) -> bool:
-    return val is None or str(val).strip() == ""
-
-
-# -----------------------------
-# Main Processing
-# -----------------------------
-
-def fix_file(input_path: str, output_path: str) -> dict:
+def fix_file(input_path, output_path):
     wb = load_workbook(input_path)
     ws = wb.active
 
-    current_parent_value: Optional[str] = None
+    current_parent = None
     changed_count = 0
 
     for row in range(1, ws.max_row + 1):
-        cellA = ws.cell(row=row, column=1)   # STT or Parent text
-        cellF = ws.cell(row=row, column=6)   # MST người mua
+        cellA = ws.cell(row=row, column=1)
+        cellF = ws.cell(row=row, column=6)
 
         # Nếu là dòng cha
         if is_parent_row(cellA.value):
-            current_parent_value = str(cellA.value).strip()
+            current_parent = str(cellA.value).strip()
             continue
 
-        # Nếu là dòng con
+        # Nếu là dòng con -> luôn ghi đè
         if is_child_row(cellA.value):
-            if current_parent_value and is_empty(cellF.value):
-                cellF.value = current_parent_value
+            if current_parent:
+                cellF.value = current_parent
                 changed_count += 1
 
     wb.save(output_path)
-    return {"changed_cells": changed_count, "output": output_path}
+    return changed_count
 
 
-# -----------------------------
-# CLI
-# -----------------------------
-
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Copy 'Tên sản phẩm:' from parent rows to column F (MST người mua) of child rows."
-    )
+def main():
+    parser = argparse.ArgumentParser()
     parser.add_argument("input", help="Input Excel file (.xlsx)")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite input file (creates backup)")
+    parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
 
-    input_path = args.input
-
-    if not os.path.isfile(input_path):
-        raise SystemExit(f"File not found: {input_path}")
+    if not os.path.isfile(args.input):
+        print("File không tồn tại")
+        return
 
     if args.overwrite:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup = f"{input_path}.backup.{ts}"
-        os.rename(input_path, backup)
-        output_path = input_path
-        print(f"Backup created: {backup}")
+        backup = f"{args.input}.backup.{ts}"
+        os.rename(args.input, backup)
+        output_path = args.input
+        print(f"Đã backup: {backup}")
     else:
-        base, ext = os.path.splitext(input_path)
+        base, ext = os.path.splitext(args.input)
         output_path = f"{base}_fixed{ext}"
 
-    print(f"Processing: {input_path}")
-    result = fix_file(input_path, output_path)
+    changed = fix_file(args.input, output_path)
 
-    print(f"Done. Changed cells: {result['changed_cells']}")
-    print(f"Output file: {result['output']}")
+    print("Hoàn thành.")
+    print("Số ô đã cập nhật:", changed)
+    print("File output:", output_path)
 
 
 if __name__ == "__main__":
